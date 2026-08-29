@@ -1,0 +1,28 @@
+# Terraform
+terraform/
+*.tfstate
+*.tfstate.*
+.tfplan
+.terraform/
+crash.log
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# Datos locales
+ml/data/*.csv
+ml/data/*.json
+!ml/data/.gitkeep
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Datasets grandes / modelo
+*.onnx
+ml/output/
