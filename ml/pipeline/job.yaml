@@ -1,0 +1,33 @@
+$schema: https://azuremlschemas.azureedge.net/latest/commandJob.schema.json
+type: command
+display_name: train-iris-classifier
+experiment_name: iris-training
+description: Entrenamiento del clasificador Iris con RandomForest + MLflow autologging
+
+# Carpeta que se sube como código al cluster (raíz del proyecto),
+# de modo que `ml/` esté disponible como paquete para `python -m ml.pipeline.train`
+code: ../../
+
+# Comando que se ejecuta dentro del job.
+# MLflow dentro de un job de Azure ML apunta automáticamente al workspace,
+# por lo que log_metric, log_model y register_model quedan en Azure ML.
+command: >-
+  python -m ml.pipeline.train
+  --data ${{inputs.data}}
+  --model-name iris-classifier
+  --n-estimators 100
+  --max-depth 4
+  --baseline-accuracy 0.75
+
+inputs:
+  data:
+    type: uri_file
+    path: ../data/iris.csv
+
+# Entorno (se crea a partir del conda.yaml la primera vez)
+environment:
+  image: mcr.microsoft.com/azureml/openmpi4.1.0-ubuntu20.04:latest
+  conda_file: ../environments/conda.yaml
+
+# Compute cluster creado en la Etapa 1
+compute: azureml:cpu-cluster

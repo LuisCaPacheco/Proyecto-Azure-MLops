@@ -1,0 +1,11 @@
+# No subir artefactos locales de desarrollo a la imagen
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.log
+.DS_Store
+
+# El modelo se copia de forma explícita (no se ignoran los .pkl)
+!model/

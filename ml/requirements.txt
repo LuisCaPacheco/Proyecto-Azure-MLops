@@ -1,0 +1,11 @@
+scikit-learn>=1.3.2
+pandas>=2.1.4
+numpy>=1.26.4
+# MLflow 2.x: el API de Model Registry "stages" (Staging/Production)
+# requerido por el proyecto solo existe en la serie 2.x. Azure ML integra
+# MLflow 2.x con soporte completo de stages/promoción.
+mlflow>=2.9,<3
+joblib>=1.3.2
+azure-ai-ml>=1.12.0
+pytest>=8.0.0
+flake8>=7.0.0

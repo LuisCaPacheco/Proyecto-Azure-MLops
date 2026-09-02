@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Plataforma MLOps en Azure (P07)",
+    "output": "architecture.html",
+    "quality_profile": "showcase",
+    "viewBox": [1300, 660],
+    "views": [
+      {
+        "id": "etapa-2",
+        "label": "Etapa 2 · Entrenamiento",
+        "focus": ["dataset", "blob", "train", "mlflow", "registry"],
+        "note": "Datos, entrenamiento, MLflow y Model Registry."
+      },
+      {
+        "id": "etapa-3",
+        "label": "Etapa 3 · Inferencia",
+        "focus": ["registry", "acr", "aci", "kv", "clients"],
+        "note": "Empaquetado de imagen, ACI y credenciales."
+      },
+      {
+        "id": "etapa-4",
+        "label": "Etapa 4 · CI/CD y monitoreo",
+        "focus": ["pipelines", "train", "aci", "monitor"],
+        "note": "Automatización Azure Pipelines y telemetría (pendiente)."
+      }
+    ]
+  },
+  "components": [
+    { "id": "dataset", "type": "external", "label": "Dataset Iris", "sublabel": "CSV · UCI/sklearn", "pos": [30, 320], "size": [125, 64] },
+    { "id": "blob", "type": "database", "label": "Azure Blob Storage", "sublabel": "raw / processed", "pos": [210, 320], "size": [150, 64] },
+    { "id": "train", "type": "backend", "label": "Training Job", "sublabel": "cpu-cluster · RandomForest", "pos": [430, 320], "size": [150, 64] },
+    { "id": "mlflow", "type": "cloud", "label": "MLflow Tracking", "sublabel": "experimento iris-training", "pos": [430, 130], "size": [150, 64] },
+    { "id": "registry", "type": "database", "label": "Model Registry", "sublabel": "iris-classifier · Prod", "pos": [660, 320], "size": [150, 64] },
+    { "id": "kv", "type": "security", "label": "Key Vault", "sublabel": "credenciales ACR", "pos": [890, 120], "size": [150, 60] },
+    { "id": "acr", "type": "database", "label": "Container Registry", "sublabel": "endpoint:latest", "pos": [890, 320], "size": [150, 64] },
+    { "id": "aci", "type": "backend", "label": "ACI Endpoint", "sublabel": "FastAPI /predict", "pos": [890, 520], "size": [150, 64] },
+    { "id": "clients", "type": "external", "label": "Consumidores", "sublabel": "REST · JSON", "pos": [1125, 410], "size": [130, 64] },
+    { "id": "monitor", "type": "cloud", "label": "Azure Monitor", "sublabel": "App Insights · Logs", "pos": [1125, 520], "size": [140, 64] },
+    { "id": "pipelines", "type": "cloud", "label": "Azure Pipelines", "sublabel": "CI/CD · Etapa 4", "pos": [30, 520], "size": [140, 64] }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Azure · centralus · Subscription Azure for Students",
+      "wraps": ["blob", "train", "mlflow", "registry", "kv", "acr", "aci", "monitor", "pipelines"],
+      "pad": 22
+    },
+    {
+      "kind": "security-group",
+      "label": "AML Workspace mlw-mlopsproj-dev",
+      "wraps": ["train", "mlflow", "registry"],
+      "pad": 16
+    }
+  ],
+  "connections": [
+    { "id": "dataset-blob", "from": "dataset", "to": "blob", "label": "ingesta (raw)", "variant": "emphasis", "labelAt": [190, 448] },
+    { "id": "blob-train", "from": "blob", "to": "train", "label": "datastore · processed", "labelAt": [370, 296] },
+    { "id": "train-mlflow", "from": "train", "to": "mlflow", "label": "MLflow autolog", "variant": "dashed", "fromSide": "top", "toSide": "bottom", "labelAt": [505, 250] },
+    { "id": "mlflow-registry", "from": "mlflow", "to": "registry", "label": "registro · Production", "variant": "dashed", "fromSide": "right", "toSide": "top", "labelAt": [700, 250] },
+    { "id": "registry-acr", "from": "registry", "to": "acr", "label": "empaqueta imagen", "labelAt": [845, 448] },
+    { "id": "kv-acr", "from": "kv", "to": "acr", "label": "credenciales", "variant": "security", "fromSide": "bottom", "toSide": "top", "labelAt": [1010, 220] },
+    { "id": "acr-aci", "from": "acr", "to": "aci", "label": "imagen:latest", "fromSide": "bottom", "toSide": "top", "labelAt": [1015, 445] },
+    { "id": "aci-clients", "from": "aci", "to": "clients", "label": "POST /predict", "variant": "emphasis", "labelAt": [1085, 503] },
+    { "id": "aci-monitor", "from": "aci", "to": "monitor", "label": "telemetría · logs", "variant": "dashed", "labelAt": [1068, 598] },
+    { "id": "pipelines-train", "from": "pipelines", "to": "train", "label": "dispara job", "variant": "dashed", "labelAt": [88, 452] }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Etapa 1-2 · Hecho", "items": ["Infra Terraform desplegada en centralus (rg-mlopsproj-dev)", "Job de entrenamiento completado · acc 0.8947", "Modelo iris-classifier v1 en Production (MLflow)"] },
+    { "dot": "amber", "title": "Etapa 3 · En curso", "items": ["Dockerfile + FastAPI /predict y /health listos", "Imagen endpoint:latest pendiente de build + push a ACR", "Deploy ACI: descomentar recurso en main.tf"] },
+    { "dot": "rose", "title": "Etapa 4 · Pendiente", "items": ["Azure Pipelines: data-prep → train → evaluate → deploy", "Data drift + monitoreo continuo", "Docs, informe MLflow y análisis de costos"] }
+  ]
+}

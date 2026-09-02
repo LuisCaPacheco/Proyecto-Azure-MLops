@@ -1,28 +1,25 @@
 # Terraform
-terraform/
-*.tfstate
-*.tfstate.*
-.tfplan
 .terraform/
-crash.log
+*.tfstate
+*.tfstate.backup
+*.tfvars
+.terraform.lock.hcl
 
-# Python
+# Python & Entornos
 __pycache__/
 *.py[cod]
+*$py.class
 .venv/
+env/
 venv/
-*.egg-info/
+*.env
 
-# Datos locales
-ml/data/*.csv
-ml/data/*.json
-!ml/data/.gitkeep
+# Azure / MLflow
+.azureml/
+mlruns/
+outputs/
 
-# IDE
-.idea/
+# VSCode & IDEs
 .vscode/
-*.swp
-
-# Datasets grandes / modelo
-*.onnx
-ml/output/
+.idea/
+.DS_Store

@@ -1,0 +1,13 @@
+.git/
+.azure-pipelines/
+terraform/
+endpoint/
+docs/
+*.tfstate*
+.tfplan
+.terraform/
+__pycache__/
+**/__pycache__/
+*.pyc
+.mlflow/
+mlruns/
