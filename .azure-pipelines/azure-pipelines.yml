@@ -1,0 +1,241 @@
+# Pipeline MLOps CI/CD (Etapa 4) - Proyecto P07 The Odyssey
+#
+# CI  -> lint + pruebas unitarias (en cada PR y push)
+# CD  -> DataPrep -> Train (Azure ML) -> Evaluate (gate) -> Build & Push (ACR) -> Deploy (ACI) -> Smoke test
+#
+# Requisitos en Azure DevOps:
+# - Service connection ARM "sc-azure-mlops" (Workload Identity) con rol Contributor
+#   sobre rg-mlopsproj-dev y "Storage Blob Data Contributor" sobre el storage.
+# - Variable group "mlops-dev" (vinculado a Key Vault kv-mlopsproj-dev) con el
+#   secreto "endpoint-api-key" que genera Terraform.
+# - Environment "production" con aprobación manual (gate humano antes de ACI).
+
+trigger:
+  branches:
+    include: [main]
+  paths:
+    include: [ml/*, endpoint/*, .azure-pipelines/*]
+
+pr:
+  branches:
+    include: [main]
+
+variables:
+  - group: mlops-dev
+  - name: azureSubscription
+    value: sc-azure-mlops
+  # Deben coincidir con project_name / environment / location de Terraform
+  - name: project
+    value: mlopsproj
+  - name: env
+    value: dev
+  - name: location
+    value: centralus
+  - name: resourceGroup
+    value: rg-$(project)-$(env)
+  - name: workspace
+    value: mlw-$(project)-$(env)
+  - name: storageAccount
+    value: st$(project)$(env)001
+  - name: acrName
+    value: acr$(project)$(env)
+  - name: aciName
+    value: aci-$(project)-$(env)-inference
+  - name: dnsLabel
+    value: mlops-$(project)-$(env)
+  - name: appInsights
+    value: appi-$(project)-$(env)
+  - name: logAnalytics
+    value: log-$(project)-$(env)
+  - name: imageTag
+    value: $(Build.BuildId)
+  - name: pythonVersion
+    value: "3.12"
+  - name: isMain
+    value: $[eq(variables['Build.SourceBranch'], 'refs/heads/main')]
+
+pool:
+  vmImage: ubuntu-latest
+
+stages:
+  # -------------------------------------------------------------------------
+  - stage: CI
+    displayName: "CI - lint y pruebas"
+    jobs:
+      - job: tests
+        steps:
+          - task: UsePythonVersion@0
+            inputs: { versionSpec: "$(pythonVersion)" }
+          - script: |
+              pip install -r ml/requirements.txt
+              python -m ml.data.load_data
+            displayName: Instalar dependencias y preparar datos
+          - script: flake8 ml endpoint --max-line-length 120
+            displayName: Lint (flake8)
+          - script: pytest ml/tests -v --junitxml=test-results/ml.xml
+            displayName: Pruebas unitarias ml/
+          - task: PublishTestResults@2
+            condition: always()
+            inputs:
+              testResultsFiles: test-results/*.xml
+              testRunTitle: Pruebas unitarias
+
+  # -------------------------------------------------------------------------
+  - stage: DataPrep
+    displayName: "Datos -> Blob Storage (raw) + Data Asset"
+    dependsOn: CI
+    condition: and(succeeded(), eq(variables.isMain, true))
+    jobs:
+      - job: upload
+        steps:
+          - task: UsePythonVersion@0
+            inputs: { versionSpec: "$(pythonVersion)" }
+          - script: pip install pandas && python -m ml.data.load_data
+            displayName: Descargar y preparar UCI 697
+          - task: AzureCLI@2
+            displayName: Subir a raw y registrar student-dropout
+            inputs:
+              azureSubscription: $(azureSubscription)
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                az extension add -n ml -y
+                bash ml/data/upload_to_blob.sh $(storageAccount) $(workspace) $(resourceGroup)
+
+  # -------------------------------------------------------------------------
+  - stage: Train
+    displayName: "Entrenamiento en Azure ML (cpu-cluster)"
+    dependsOn: DataPrep
+    jobs:
+      - job: train
+        timeoutInMinutes: 90
+        steps:
+          - task: AzureCLI@2
+            displayName: Lanzar job y esperar
+            inputs:
+              azureSubscription: $(azureSubscription)
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+                az extension add -n ml -y
+                JOB=$(az ml job create -f ml/pipeline/job.yaml \
+                  --set inputs.data.path=azureml:student-dropout@latest \
+                  --workspace-name $(workspace) -g $(resourceGroup) --query name -o tsv)
+                echo "Job: $JOB"
+                az ml job stream -n "$JOB" --workspace-name $(workspace) -g $(resourceGroup)
+                STATUS=$(az ml job show -n "$JOB" --workspace-name $(workspace) -g $(resourceGroup) --query status -o tsv)
+                [[ "$STATUS" == "Completed" ]] || { echo "Job terminó en $STATUS"; exit 1; }
+                az ml job download -n "$JOB" --output-name metrics --download-path job_out \
+                  --workspace-name $(workspace) -g $(resourceGroup)
+                cp "$(find job_out -name metrics.json | head -1)" $(Build.ArtifactStagingDirectory)/metrics.json
+          - publish: $(Build.ArtifactStagingDirectory)/metrics.json
+            artifact: train-metrics
+
+  # -------------------------------------------------------------------------
+  - stage: Evaluate
+    displayName: "Gate: baseline + recall por clase + vs Production"
+    dependsOn: Train
+    jobs:
+      - job: gate
+        steps:
+          - download: current
+            artifact: train-metrics
+          - task: UsePythonVersion@0
+            inputs: { versionSpec: "$(pythonVersion)" }
+          - task: AzureCLI@2
+            name: decision
+            displayName: Evaluar candidato
+            inputs:
+              azureSubscription: $(azureSubscription)
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+                pip install -q "mlflow>=2.9,<3" azureml-mlflow scikit-learn==1.9.1 pandas
+                az extension add -n ml -y
+                export MLFLOW_TRACKING_URI=$(az ml workspace show -n $(workspace) -g $(resourceGroup) \
+                  --query mlflow_tracking_uri -o tsv)
+                # El job ya promovió el modelo si pasó sus reglas; aquí se re-verifica
+                # contra la versión anterior para decidir si vale la pena redesplegar.
+                python -m ml.pipeline.evaluate \
+                  --metrics-file $(Pipeline.Workspace)/train-metrics/metrics.json \
+                  --output evaluation.json
+                DEPLOY=$(python -c "import json;print(str(json.load(open('evaluation.json'))['deploy']).lower())")
+                echo "##vso[task.setvariable variable=deploy;isOutput=true]$DEPLOY"
+
+  # -------------------------------------------------------------------------
+  - stage: BuildPush
+    displayName: "Empaquetar endpoint y publicar en ACR"
+    dependsOn: Evaluate
+    condition: and(succeeded(), eq(dependencies.Evaluate.outputs['gate.decision.deploy'], 'true'))
+    jobs:
+      - job: image
+        steps:
+          - task: UsePythonVersion@0
+            inputs: { versionSpec: "$(pythonVersion)" }
+          - task: AzureCLI@2
+            displayName: Descargar modelo, probar, construir y publicar
+            inputs:
+              azureSubscription: $(azureSubscription)
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+                az extension add -n ml -y
+                cd endpoint
+                bash download_model.sh $(workspace) $(resourceGroup)
+                pip install -q -r requirements.txt pytest httpx
+                pytest tests -v
+                az acr login -n $(acrName)
+                docker build -t $(acrName).azurecr.io/endpoint:$(imageTag) \
+                             -t $(acrName).azurecr.io/endpoint:latest .
+                docker push --all-tags $(acrName).azurecr.io/endpoint
+
+  # -------------------------------------------------------------------------
+  - stage: Deploy
+    displayName: "Desplegar en ACI + smoke test"
+    dependsOn: BuildPush
+    jobs:
+      - deployment: aci
+        environment: production   # aprobación manual configurada en el environment
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                - task: AzureCLI@2
+                  displayName: az container create
+                  inputs:
+                    azureSubscription: $(azureSubscription)
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    inlineScript: |
+                      set -euo pipefail
+                      ACR_PWD=$(az acr credential show -n $(acrName) --query "passwords[0].value" -o tsv)
+                      az extension add -n application-insights -y
+                      APPI=$(az monitor app-insights component show -a $(appInsights) -g $(resourceGroup) \
+                        --query connectionString -o tsv)
+                      LAW_ID=$(az monitor log-analytics workspace show -n $(logAnalytics) -g $(resourceGroup) \
+                        --query customerId -o tsv)
+                      LAW_KEY=$(az monitor log-analytics workspace get-shared-keys -n $(logAnalytics) \
+                        -g $(resourceGroup) --query primarySharedKey -o tsv)
+                      az container create -g $(resourceGroup) -n $(aciName) \
+                        --image $(acrName).azurecr.io/endpoint:$(imageTag) \
+                        --registry-login-server $(acrName).azurecr.io \
+                        --registry-username $(acrName) --registry-password "$ACR_PWD" \
+                        --dns-name-label $(dnsLabel) --ports 8000 --cpu 1 --memory 1.5 \
+                        --os-type Linux --restart-policy Always \
+                        --secure-environment-variables API_KEY="$(endpoint-api-key)" \
+                          APPLICATIONINSIGHTS_CONNECTION_STRING="$APPI" \
+                        --log-analytics-workspace "$LAW_ID" --log-analytics-workspace-key "$LAW_KEY"
+                - script: |
+                    set -euo pipefail
+                    URL=http://$(dnsLabel).$(location).azurecontainer.io:8000
+                    for i in $(seq 1 30); do curl -fs $URL/health && break || sleep 10; done
+                    CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST $URL/predict \
+                      -H "Content-Type: application/json" -d @endpoint/examples/estudiante_riesgo_alto.json)
+                    [[ "$CODE" == "401" ]] || { echo "Se esperaba 401 sin API key y llegó $CODE"; exit 1; }
+                    curl -fs -X POST $URL/predict -H "Content-Type: application/json" \
+                      -H "X-API-Key: $(endpoint-api-key)" -d @endpoint/examples/estudiante_riesgo_alto.json
+                  displayName: Smoke test (/health, 401 sin key, /predict)

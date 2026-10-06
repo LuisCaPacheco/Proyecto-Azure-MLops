@@ -1,0 +1,27 @@
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfvars
+.terraform.lock.hcl
+
+# Python & Entornos
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+venv/
+*.env
+
+# Azure / MLflow
+.azureml/
+mlruns/
+mlruns.db
+outputs/
+.pytest_cache/
+
+# VSCode & IDEs
+.vscode/
+.idea/
+.DS_Store

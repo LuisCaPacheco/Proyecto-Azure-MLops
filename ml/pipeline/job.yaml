@@ -1,0 +1,45 @@
+$schema: https://azuremlschemas.azureedge.net/latest/commandJob.schema.json
+type: command
+display_name: train-dropout-classifier
+experiment_name: dropout-training
+description: >-
+  Entrenamiento del modelo de deserción universitaria (UCI 697) con
+  RandomForest + MLflow; registra dropout-classifier y lo promueve a
+  Production si supera el baseline y los umbrales de recall por clase.
+
+# Carpeta que se sube como código al cluster (raíz del proyecto),
+# de modo que `ml/` esté disponible como paquete para `python -m ml.pipeline.train`
+code: ../../
+
+# Comando que se ejecuta dentro del job.
+# MLflow dentro de un job de Azure ML apunta automáticamente al workspace,
+# por lo que log_metric, log_model y register_model quedan en Azure ML.
+command: >-
+  python -m ml.pipeline.train
+  --data ${{inputs.data}}
+  --model-name dropout-classifier
+  --n-estimators 300
+  --max-depth 10
+  --min-samples-leaf 3
+  --class-weight balanced_subsample
+  --baseline-accuracy 0.70
+  --metrics-output ${{outputs.metrics}}/metrics.json
+
+inputs:
+  data:
+    type: uri_file
+    # Local: se sube con el job. En CI se sobreescribe con el blob del contenedor raw:
+    #   --set inputs.data.path=azureml://datastores/workspaceblobstore/paths/raw/dropout.csv
+    path: ../data/dropout.csv
+
+outputs:
+  metrics:
+    type: uri_folder
+
+# Entorno (se crea a partir del conda.yaml la primera vez)
+environment:
+  image: mcr.microsoft.com/azureml/openmpi4.1.0-ubuntu20.04:latest
+  conda_file: ../environments/conda.yaml
+
+# Compute cluster creado en la Etapa 1
+compute: azureml:cpu-cluster

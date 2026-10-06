@@ -1,0 +1,16 @@
+# Entorno local (Windows, Python 3.12-3.14) para scripts\run_local_pipeline.ps1
+scikit-learn==1.9.1
+cloudpickle==3.1.2
+pandas>=2.1.4
+numpy>=1.26.4
+scipy>=1.11
+matplotlib>=3.8
+mlflow>=3
+joblib>=1.3.2
+pytest>=8.0.0
+flake8>=7.0.0
+# Pruebas del endpoint
+fastapi>=0.110
+uvicorn[standard]>=0.29
+httpx>=0.27
+pyyaml>=6.0

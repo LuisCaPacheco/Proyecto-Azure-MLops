@@ -1,0 +1,69 @@
+artifact_path: file:D:/proyectos luis/Proyecto-Azure-MLops-main/mlruns/2/models/m-6548563c966d4beebc967092acd22bdc/artifacts
+flavors:
+  python_function:
+    env:
+      conda: conda.yaml
+      virtualenv: python_env.yaml
+    loader_module: mlflow.sklearn
+    model_path: model.pkl
+    predict_fn: predict
+    python_version: 3.14.7
+  sklearn:
+    code: null
+    pickled_model: model.pkl
+    serialization_format: cloudpickle
+    sklearn_version: 1.9.1
+    skops_trusted_types: null
+is_signature_from_type_hint: false
+metadata:
+  classes:
+  - Dropout
+  - Enrolled
+  - Graduate
+mlflow_version: 3.16.1
+model_id: m-6548563c966d4beebc967092acd22bdc
+model_size_bytes: 11080592
+model_uuid: m-6548563c966d4beebc967092acd22bdc
+prompts: null
+run_id: 522cfe1422de46a4970549582622cafa
+saved_input_example_info:
+  artifact_path: input_example.json
+  pandas_orient: split
+  serving_input_path: serving_input_example.json
+  type: dataframe
+signature:
+  inputs: '[{"type": "long", "name": "marital_status", "required": true}, {"type":
+    "long", "name": "application_mode", "required": true}, {"type": "long", "name":
+    "application_order", "required": true}, {"type": "long", "name": "course", "required":
+    true}, {"type": "long", "name": "daytime_evening_attendance", "required": true},
+    {"type": "long", "name": "previous_qualification", "required": true}, {"type":
+    "double", "name": "previous_qualification_grade", "required": true}, {"type":
+    "long", "name": "nationality", "required": true}, {"type": "long", "name": "mothers_qualification",
+    "required": true}, {"type": "long", "name": "fathers_qualification", "required":
+    true}, {"type": "long", "name": "mothers_occupation", "required": true}, {"type":
+    "long", "name": "fathers_occupation", "required": true}, {"type": "double", "name":
+    "admission_grade", "required": true}, {"type": "long", "name": "displaced", "required":
+    true}, {"type": "long", "name": "educational_special_needs", "required": true},
+    {"type": "long", "name": "debtor", "required": true}, {"type": "long", "name":
+    "tuition_fees_up_to_date", "required": true}, {"type": "long", "name": "gender",
+    "required": true}, {"type": "long", "name": "scholarship_holder", "required":
+    true}, {"type": "long", "name": "age_at_enrollment", "required": true}, {"type":
+    "long", "name": "international", "required": true}, {"type": "long", "name": "curricular_units_1st_sem_credited",
+    "required": true}, {"type": "long", "name": "curricular_units_1st_sem_enrolled",
+    "required": true}, {"type": "long", "name": "curricular_units_1st_sem_evaluations",
+    "required": true}, {"type": "long", "name": "curricular_units_1st_sem_approved",
+    "required": true}, {"type": "double", "name": "curricular_units_1st_sem_grade",
+    "required": true}, {"type": "long", "name": "curricular_units_1st_sem_without_evaluations",
+    "required": true}, {"type": "long", "name": "curricular_units_2nd_sem_credited",
+    "required": true}, {"type": "long", "name": "curricular_units_2nd_sem_enrolled",
+    "required": true}, {"type": "long", "name": "curricular_units_2nd_sem_evaluations",
+    "required": true}, {"type": "long", "name": "curricular_units_2nd_sem_approved",
+    "required": true}, {"type": "double", "name": "curricular_units_2nd_sem_grade",
+    "required": true}, {"type": "long", "name": "curricular_units_2nd_sem_without_evaluations",
+    "required": true}, {"type": "double", "name": "unemployment_rate", "required":
+    true}, {"type": "double", "name": "inflation_rate", "required": true}, {"type":
+    "double", "name": "gdp", "required": true}]'
+  outputs: '[{"type": "tensor", "tensor-spec": {"dtype": "int64", "shape": [-1]}}]'
+  params: null
+type_hint_from_example: false
+utc_time_created: '2026-09-29 15:11:02.418352'

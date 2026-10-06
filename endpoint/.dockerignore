@@ -1,0 +1,15 @@
+# No subir artefactos locales de desarrollo a la imagen
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.log
+.DS_Store
+tests/
+.pytest_cache/
+
+# El modelo se copia de forma explícita (no se ignoran los .pkl)
+!model/
+# Modelo Iris de la primera iteración (histórico, no se sirve)
+model/iris-classifier/

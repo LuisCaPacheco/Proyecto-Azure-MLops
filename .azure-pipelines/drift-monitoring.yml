@@ -1,0 +1,100 @@
+# Monitoreo programado de data drift (Etapa 4)
+#
+# Todos los días lee de Log Analytics las inferencias de las últimas 24 h
+# (logs JSON del contenedor ACI, event=inference), las compara con el perfil
+# de referencia del modelo en Production (PSI + KS) y, si hay drift
+# significativo, publica el reporte y lanza el pipeline de reentrenamiento.
+
+trigger: none
+pr: none
+
+schedules:
+  - cron: "0 11 * * *"   # 06:00 hora Colombia
+    displayName: Drift diario
+    branches:
+      include: [main]
+    always: true
+
+variables:
+  azureSubscription: sc-azure-mlops
+  # Deben coincidir con project_name / environment de Terraform
+  project: mlopsproj
+  env: dev
+  resourceGroup: rg-$(project)-$(env)
+  workspace: mlw-$(project)-$(env)
+  lawName: log-$(project)-$(env)
+  trainingPipelineId: "1"   # id del pipeline azure-pipelines.yml en Azure DevOps
+
+pool:
+  vmImage: ubuntu-latest
+
+stages:
+  - stage: Drift
+    jobs:
+      - job: check
+        steps:
+          - task: UsePythonVersion@0
+            inputs: { versionSpec: "3.12" }
+          - task: AzureCLI@2
+            name: drift
+            displayName: Consultar inferencias y calcular drift
+            inputs:
+              azureSubscription: $(azureSubscription)
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+                pip install -q pandas numpy scipy "mlflow>=2.9,<3" azureml-mlflow
+                az extension add -n ml -y
+                az extension add -n log-analytics -y
+
+                # 1. Perfil de referencia del modelo en Production
+                export MLFLOW_TRACKING_URI=$(az ml workspace show -n $(workspace) -g $(resourceGroup) \
+                  --query mlflow_tracking_uri -o tsv)
+                python - <<'EOF'
+                import mlflow
+                from mlflow.tracking import MlflowClient
+                v = MlflowClient().get_latest_versions("dropout-classifier", stages=["Production"])[0]
+                mlflow.artifacts.download_artifacts(run_id=v.run_id, artifact_path="evaluation", dst_path=".")
+                EOF
+
+                # 2. Inferencias de las últimas 24 h desde Log Analytics
+                LAW_ID=$(az monitor log-analytics workspace show -n $(lawName) -g $(resourceGroup) \
+                  --query customerId -o tsv)
+                az monitor log-analytics query -w "$LAW_ID" -o json --analytics-query "
+                  ContainerInstanceLog_CL
+                  | where TimeGenerated > ago(24h)
+                  | where Message startswith '{\"event\": \"inference\"'
+                  | project Message" | python -c "import json,sys; [print(r['Message']) for r in json.load(sys.stdin)]" > inference.log
+                echo "Inferencias: $(wc -l < inference.log)"
+
+                # 3. Drift
+                set +e
+                python -m ml.monitoring.drift --reference evaluation/reference_profile.json \
+                  --current-logs inference.log --output drift.json --markdown drift.md --fail-on-drift
+                CODE=$?
+                set -e
+                cat drift.md || true
+                echo "##vso[task.uploadsummary]$(pwd)/drift.md"
+                if [[ $CODE -eq 1 ]]; then
+                  echo "##vso[task.setvariable variable=retrain;isOutput=true]true"
+                else
+                  echo "##vso[task.setvariable variable=retrain;isOutput=true]false"
+                fi
+          - publish: drift.json
+            artifact: drift-report
+            condition: always()
+
+  - stage: Retrain
+    dependsOn: Drift
+    condition: eq(dependencies.Drift.outputs['check.drift.retrain'], 'true')
+    jobs:
+      - job: trigger
+        steps:
+          - script: |
+              az extension add -n azure-devops -y
+              az pipelines run --id $(trainingPipelineId) --branch main \
+                --org $(System.CollectionUri) --project "$(System.TeamProject)"
+            displayName: Lanzar pipeline de reentrenamiento
+            env:
+              AZURE_DEVOPS_EXT_PAT: $(System.AccessToken)

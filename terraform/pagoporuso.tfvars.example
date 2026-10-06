@@ -1,0 +1,16 @@
+# Suscripción de pago por uso (copiar como terraform.tfvars, que está en .gitignore)
+#   copy pagoporuso.tfvars.example terraform.tfvars
+#
+# project_name: solo minúsculas y números, máx. 10 caracteres. Storage, ACR y
+# Key Vault necesitan nombres únicos en todo Azure; si alguno ya existe, cámbielo
+# (y use el mismo valor en la variable `project` de .azure-pipelines/*.yml).
+project_name = "odyssey07"
+environment  = "dev"
+location     = "centralus"
+
+# Primero false; se cambia a true (o -var="deploy_aci=true") cuando la imagen esté en ACR
+deploy_aci         = false
+endpoint_image_tag = "v1"
+
+# Correos que reciben las alertas de Azure Monitor
+alert_emails = []
