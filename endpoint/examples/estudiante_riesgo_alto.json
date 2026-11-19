@@ -1,0 +1,22 @@
+{
+  "student": {
+    "sexo": 0,
+    "edad": 15,
+    "edu_inicial": 0,
+    "nivel_edu": 4,
+    "terminado": 1,
+    "ent": 20,
+    "q_personas": 5,
+    "q_hombres": 2,
+    "q_mujeres": 3,
+    "menores_30": 1,
+    "pc": 1,
+    "laptop": 0,
+    "tv_plana": 1,
+    "tablet": 0,
+    "smartphone": 1,
+    "internet_f": 0,
+    "max_nivel_esp": 0,
+    "entr_diagnost": 0
+  }
+}

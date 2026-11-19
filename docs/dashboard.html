@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>P07 · Plataforma MLOps en Azure</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --card: #151b23;
+    --line: #242c37;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --accent: #58a6ff;
+    --ok: #3fb950;
+    --warn: #d29922;
+    --off: #6e7681;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.65 "Segoe UI", system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 0 24px; }
+  header {
+    border-bottom: 1px solid var(--line);
+    background: #0b0f14;
+  }
+  .bar {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 16px; padding: 14px 0; flex-wrap: wrap;
+  }
+  .bar .left { font-size: 13px; color: var(--muted); letter-spacing: .3px; }
+  .bar .right { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  main { padding: 36px 0 56px; }
+  h1 {
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 31px; line-height: 1.25; margin: 0 0 10px; font-weight: 600;
+    letter-spacing: -.2px;
+  }
+  .lead { color: var(--muted); margin: 0; max-width: 64ch; }
+  .meta { font-size: 13px; margin: 10px 0 0; }
+  h2 {
+    font-size: 12px; text-transform: uppercase; letter-spacing: 1.2px;
+    color: var(--muted); font-weight: 600; margin: 40px 0 14px;
+  }
+  .grid { display: grid; gap: 12px; }
+  .kpis { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+  .card {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 6px; padding: 16px 18px;
+  }
+  .kpi-label { font-size: 12px; color: var(--muted); }
+  .kpi-value {
+    font-size: 25px; font-weight: 600; margin-top: 4px;
+    font-variant-numeric: tabular-nums; letter-spacing: -.3px;
+  }
+  .kpi-note { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th {
+    text-align: left; font-size: 12px; font-weight: 600; color: var(--muted);
+    padding: 9px 10px; border-bottom: 1px solid var(--line);
+  }
+  td { padding: 10px; border-bottom: 1px solid #1c232c; vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .table-card { background: var(--card); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+  code {
+    font-family: Consolas, "Cascadia Mono", monospace; font-size: 12.5px;
+    background: #1b2230; color: #c9d1d9; border-radius: 3px; padding: 1px 5px;
+  }
+  .st { font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+  .st.ok { color: var(--ok); }
+  .st.warn { color: var(--warn); }
+  .st.off { color: var(--off); }
+  .muted { color: var(--muted); }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 760px) { .cols { grid-template-columns: 1fr; } }
+  ul.plain { margin: 0; padding-left: 18px; }
+  ul.plain li { margin: 3px 0; }
+  dl.facts { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 6px 18px; font-size: 14px; }
+  dl.facts dt { color: var(--muted); }
+  dl.facts dd { margin: 0; font-variant-numeric: tabular-nums; }
+  .bar-row { display: flex; align-items: center; gap: 10px; margin: 10px 0; font-size: 13.5px; }
+  .bar-row .name { width: 88px; color: var(--muted); }
+  .bar-row .track { flex: 1; height: 8px; background: #1b2230; border-radius: 4px; overflow: hidden; }
+  .bar-row .fill { height: 100%; background: var(--accent); }
+  .bar-row .fill.alert { background: #d29922; }
+  .bar-row .pct { width: 66px; text-align: right; font-variant-numeric: tabular-nums; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .note {
+    font-size: 13.5px; color: #b6c2cf; background: #11171f;
+    border: 1px solid var(--line); border-left: 3px solid var(--accent);
+    border-radius: 4px; padding: 12px 16px;
+  }
+  .note strong { color: var(--text); }
+  footer {
+    margin-top: 44px; padding-top: 16px; border-top: 1px solid var(--line);
+    color: var(--muted); font-size: 12.5px; display: flex;
+    justify-content: space-between; gap: 16px; flex-wrap: wrap;
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap bar">
+    <div class="left">Infraestructura como código y DevOps · Proyecto 07</div>
+    <div class="right" id="stamp"></div>
+  </div>
+</header>
+
+<main class="wrap">
+  <h1>Plataforma MLOps en Azure</h1>
+  <p class="lead">
+    Entrenamiento e inferencia de un modelo de abandono escolar sobre Azure Machine Learning,
+    con la infraestructura aprovisionada en Terraform y el endpoint servido desde Azure Container Instances.
+  </p>
+
+  <h2>El conjunto de datos</h2>
+  <p class="meta muted" id="dataset-note"></p>
+  <div class="cols">
+    <div class="card"><dl class="facts" id="dataset-facts"></dl></div>
+    <div class="card" id="dataset-classes"></div>
+  </div>
+  <p class="meta muted" id="dataset-cohort"></p>
+
+  <h2>Resultados del modelo</h2>
+  <div class="grid kpis" id="kpis"></div>
+  <div class="table-card" style="margin-top:12px">
+    <table>
+      <thead><tr><th>Clase</th><th class="num">Precisión</th><th class="num">Recall</th><th class="num">F1</th><th class="num">Casos</th></tr></thead>
+      <tbody id="perclass"></tbody>
+    </table>
+  </div>
+  <p class="meta muted" id="model-note"></p>
+
+  <h2>Etapas del despliegue (corrida de referencia)</h2>
+  <div class="table-card">
+    <table>
+      <thead><tr><th style="width:150px">Etapa</th><th>Qué se hizo</th><th style="width:230px">Resultado</th><th style="width:80px">Estado</th></tr></thead>
+      <tbody id="stages"></tbody>
+    </table>
+  </div>
+
+  <h2>Verificación del endpoint</h2>
+  <div class="table-card">
+    <table>
+      <thead><tr><th style="width:230px">Prueba</th><th style="width:90px">Esperado</th><th>Obtenido</th><th style="width:80px">Estado</th></tr></thead>
+      <tbody id="checks"></tbody>
+    </table>
+  </div>
+  <p class="meta muted">
+    Respuestas completas en <a href="demo-curl-azure.md">demo-curl-azure.md</a>.
+  </p>
+
+  <h2>Recursos y servicios utilizados</h2>
+  <div class="cols">
+    <div class="card">
+      <ul class="plain" id="services"></ul>
+    </div>
+    <div class="card">
+      <ul class="plain" id="resources"></ul>
+    </div>
+  </div>
+
+  <h2>Estado del entorno</h2>
+  <p class="note" id="runtime"></p>
+
+  <footer>
+    <span>Datos leídos de Azure mediante Azure CLI al generar este informe.</span>
+    <span>Guía técnica: <a href="guia-tecnica.md">docs/guia-tecnica.md</a></span>
+  </footer>
+</main>
+
+<script id="payload-data" type="application/json">{
+  "generado": "2026-11-18 22:14",
+  "cierre": "2026-11-18",
+  "resource_group": "rg-mlopslab-dev",
+  "endpoint": {
+    "imagen": "acrmlopslabdev.azurecr.io/endpoint:v2",
+    "url": "http://mlops-mlopslab-dev.centralus.azurecontainer.io:8000",
+    "estado": "Eliminado"
+  },
+  "job": {
+    "experimento": "dropout-training",
+    "nombre": "mighty_nut_8jvyq81p06",
+    "compute": "cpu-cluster",
+    "estado": "Completed"
+  },
+  "modelo": {
+    "stage": "Staging",
+    "data_asset": "enape-abandono:pendiente",
+    "tags": [
+      "latest",
+      "v1",
+      "v2"
+    ],
+    "nombre": "enape-abandono",
+    "version": "local"
+  },
+  "dataset": {
+    "nombre": "ENAPE 2021",
+    "fuente": "INEGI · Encuesta Nacional de Acceso y Permanencia en la Educación",
+    "archivo": "df03_Dataset_ENAPE.csv",
+    "filas_crudas": 32343,
+    "columnas_crudas": 67,
+    "cohorte": 18207,
+    "positivos": 1179,
+    "porcentaje_positivos": 6.48,
+    "features": 18,
+    "features_modelo": 16,
+    "duplicados": 127,
+    "clases": [
+      {
+        "nombre": "Continua",
+        "filas": 17028,
+        "porcentaje": 93.52
+      },
+      {
+        "nombre": "Abandona",
+        "filas": 1179,
+        "porcentaje": 6.48
+      }
+    ],
+    "nota": "Cohorte: inscritos en 2020-2021, 6 años o más, con situación conocida en 2021-2022 y sin egreso por meta cumplida."
+  },
+  "metricas": {
+    "accuracy": 0.8577704557935201,
+    "f1_macro": 0.656441373683808,
+    "roc_auc": 0.8616505518675914,
+    "pr_auc": 0.40403365434465954,
+    "fuente": "validación local · 18-11",
+    "per_class": {
+      "Continua": {
+        "precision": 0.9775132275132276,
+        "recall": 0.8678802113916618,
+        "f1": 0.9194401244167962,
+        "support": 3406
+      },
+      "Abandona": {
+        "precision": 0.27184466019417475,
+        "recall": 0.711864406779661,
+        "f1": 0.39344262295081966,
+        "support": 236
+      }
+    }
+  },
+  "pruebas": {
+    "passed": 52,
+    "total": 52
+  },
+  "recursos": [
+    {
+      "nombre": "aci-mlopslab-dev-inference",
+      "tipo": "ContainerInstance/containerGroups",
+      "region": "centralus"
+    },
+    {
+      "nombre": "acrmlopslabdev",
+      "tipo": "ContainerRegistry/registries",
+      "region": "centralus"
+    },
+    {
+      "nombre": "adf-mlopslab-dev",
+      "tipo": "DataFactory/factories",
+      "region": "centralus"
+    },
+    {
+      "nombre": "ag-mlopslab-dev",
+      "tipo": "Insights/actiongroups",
+      "region": "global"
+    },
+    {
+      "nombre": "appi-mlopslab-dev",
+      "tipo": "Insights/components",
+      "region": "centralus"
+    },
+    {
+      "nombre": "alert-mlopslab-dev-aci-cpu",
+      "tipo": "Insights/metricalerts",
+      "region": "global"
+    },
+    {
+      "nombre": "alert-mlopslab-dev-endpoint-errors",
+      "tipo": "Insights/scheduledqueryrules",
+      "region": "centralus"
+    },
+    {
+      "nombre": "alert-mlopslab-dev-latency-p99",
+      "tipo": "Insights/scheduledqueryrules",
+      "region": "centralus"
+    },
+    {
+      "nombre": "a52e1f74-bd11-6ed1-3134-2ffbbd2c229b",
+      "tipo": "Insights/workbooks",
+      "region": "centralus"
+    },
+    {
+      "nombre": "kv-mlopslab-dev",
+      "tipo": "KeyVault/vaults",
+      "region": "centralus"
+    },
+    {
+      "nombre": "mlw-mlopslab-dev",
+      "tipo": "MachineLearningServices/workspaces",
+      "region": "centralus"
+    },
+    {
+      "nombre": "log-mlopslab-dev",
+      "tipo": "OperationalInsights/workspaces",
+      "region": "centralus"
+    },
+    {
+      "nombre": "stmlopslabdev001",
+      "tipo": "Storage/storageAccounts",
+      "region": "centralus"
+    }
+  ],
+  "etapas": [
+    {
+      "que": "Storage con el tfstate versionado",
+      "nombre": "Estado remoto",
+      "resultado": "rg-tfstate-mlops / sttfstatemlopslab",
+      "estado": "ok"
+    },
+    {
+      "que": "Workspace, storage, ACR, Key Vault, logs y cómputo",
+      "nombre": "Infraestructura",
+      "resultado": "27 recursos gestionados",
+      "estado": "ok"
+    },
+    {
+      "que": "Ingesta a Blob y limpieza con Data Factory",
+      "nombre": "Datos",
+      "resultado": "ADF Succeeded, 859 filas rechazadas",
+      "estado": "ok"
+    },
+    {
+      "que": "Job de Azure ML con MLflow y registro del modelo",
+      "nombre": "Entrenamiento",
+      "resultado": "mighty_nut_8jvyq81p06, Completed",
+      "estado": "ok"
+    },
+    {
+      "que": "Build y push del endpoint a ACR",
+      "nombre": "Imagen",
+      "resultado": "acrmlopslabdev.azurecr.io/endpoint:v2",
+      "estado": "ok"
+    },
+    {
+      "que": "Contenedor en ACI con 1 vCPU y 1.5 GB",
+      "nombre": "Inferencia",
+      "resultado": "Running en la demo; stopped al cerrar",
+      "estado": "ok"
+    },
+    {
+      "que": "/health, /predict y /feedback contra Azure",
+      "nombre": "Verificación",
+      "resultado": "4/4 pruebas OK",
+      "estado": "ok"
+    },
+    {
+      "que": "Pipeline de Azure Pipelines con gate y aprobación",
+      "nombre": "CI/CD",
+      "resultado": "definido, falta service connection",
+      "estado": "parcial"
+    }
+  ],
+  "evidencias": [
+    {
+      "esperado": "200",
+      "prueba": "GET /health",
+      "obtenido": "ok, modelo v1",
+      "ok": true
+    },
+    {
+      "esperado": "401",
+      "prueba": "POST /predict sin API key",
+      "obtenido": "401",
+      "ok": true
+    },
+    {
+      "esperado": "200",
+      "prueba": "POST /predict con API key",
+      "obtenido": "Dropout, riesgo 0.8775",
+      "ok": true
+    },
+    {
+      "esperado": "202",
+      "prueba": "POST /feedback",
+      "obtenido": "202",
+      "ok": true
+    }
+  ]
+}</script>
+<script>
+const D = JSON.parse(document.getElementById("payload-data").textContent);
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const n = (v, d = 0) => Number(v).toLocaleString("es-MX", { minimumFractionDigits: d, maximumFractionDigits: d });
+const pct = (v, d = 2) => n(v, d) + " %";
+const st = (state) => {
+  const map = { ok: ["ok", "Completado"], warn: ["warn", "Parcial"], off: ["off", "Pendiente"] };
+  const [cls, label] = map[state] || map.off;
+  return `<span class="st ${cls}">${label}</span>`;
+};
+
+$("stamp").textContent = D.generado;
+
+// --- Conjunto de datos -----------------------------------------------------
+const ds = D.dataset || null;
+if (ds) {
+  $("dataset-note").textContent = `${ds.nombre} · ${ds.fuente} · archivo ${ds.archivo}`;
+  const facts = [
+    ["Registros en el archivo original", n(ds.filas_crudas)],
+    ["Registros en la cohorte de estudio", n(ds.cohorte)],
+    ["Variables observadas", n(ds.features)],
+    ["Variables usadas por el modelo", n(ds.features_modelo)],
+    ["Registros duplicados descartados", n(ds.duplicados)],
+  ];
+  $("dataset-facts").innerHTML = facts.map(([k, v]) =>
+    `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("");
+
+  const max = Math.max(...ds.clases.map((c) => c.porcentaje));
+  $("dataset-classes").innerHTML = ds.clases.map((c) => {
+    const width = (c.porcentaje / max) * 100;
+    const cls = c.nombre === "Abandona" ? "fill alert" : "fill";
+    return `<div class="bar-row"><span class="name">${esc(c.nombre)}</span>` +
+      `<span class="track"><span class="${cls}" style="width:${width}%"></span></span>` +
+      `<span class="pct">${pct(c.porcentaje)}</span></div>` +
+      `<div class="muted" style="font-size:12.5px;margin:-6px 0 10px 98px">${n(c.filas)} registros</div>`;
+  }).join("");
+  $("dataset-cohort").textContent = ds.nota || "";
+} else {
+  $("dataset-note").textContent = "Sin información del conjunto de datos en este informe.";
+}
+
+// --- Resultados del modelo -------------------------------------------------
+const m = D.metricas || {};
+const kpis = [
+  ["ROC-AUC", m.roc_auc == null ? "—" : n(m.roc_auc, 3), "discriminación global"],
+  ["PR-AUC", m.pr_auc == null ? "—" : n(m.pr_auc, 3), "clase Abandona · umbral 0.35"],
+  ["Recall Abandona", m.per_class?.Abandona ? n(m.per_class.Abandona.recall, 3) : "—", "mínimo 0.60"],
+  ["Exactitud", m.accuracy == null ? "—" : pct(m.accuracy * 100), "clases desbalanceadas"],
+  ["Pruebas automáticas", `${D.pruebas.passed}/${D.pruebas.total}`, "pytest"],
+];
+$("kpis").innerHTML = kpis.map(([l, v, note]) =>
+  `<div class="card"><div class="kpi-label">${esc(l)}</div><div class="kpi-value">${esc(v)}</div><div class="kpi-note">${esc(note)}</div></div>`
+).join("");
+
+$("perclass").innerHTML = Object.entries(m.per_class || {}).map(([name, c]) =>
+  `<tr><td>${esc(name)}</td>` +
+  `<td class="num">${n(c.precision, 3)}</td><td class="num">${n(c.recall, 3)}</td>` +
+  `<td class="num">${n(c.f1, 3)}</td><td class="num">${n(c.support)}</td></tr>`
+).join("");
+
+$("model-note").textContent = [
+  m.fuente ? `Métricas: ${m.fuente}.` : "",
+  "El modelo se entrena con 16 de las 18 variables; las dos restantes se excluyen por fuga estructural.",
+].filter(Boolean).join(" ");
+
+// --- Etapas, evidencias y recursos ----------------------------------------
+$("stages").innerHTML = D.etapas.map((e) =>
+  `<tr><td><strong>${esc(e.nombre)}</strong></td><td class="muted">${esc(e.que)}</td>` +
+  `<td>${esc(e.resultado)}</td><td>${st(e.estado)}</td></tr>`
+).join("");
+
+$("checks").innerHTML = D.evidencias.map((e) =>
+  `<tr><td>${esc(e.prueba)}</td><td class="muted">${esc(e.esperado)}</td>` +
+  `<td><code>${esc(e.obtenido)}</code></td><td>${e.ok ? st("ok") : st("off")}</td></tr>`
+).join("");
+
+const services = [
+  "Azure Machine Learning: workspace, clúster de cómputo, jobs y registro de modelos",
+  "Azure Data Factory: ingesta y limpieza del dataset",
+  "Azure Storage: datos crudos, procesados y estado de Terraform",
+  "Azure Container Registry: imágenes del endpoint",
+  "Azure Container Instances: servicio de inferencia",
+  "Key Vault: clave de la API",
+  "Log Analytics, Application Insights y Azure Monitor: logs y alertas",
+];
+$("services").innerHTML = services.map((s) => `<li>${esc(s)}</li>`).join("");
+
+function friendlyType(t) {
+  const s = String(t || "").toLowerCase();
+  if (s.startsWith("containerinstance/")) return "Container Instances";
+  if (s.startsWith("containerregistry/")) return "Container Registry";
+  if (s.startsWith("datafactory/")) return "Data Factory";
+  if (s.startsWith("keyvault/")) return "Key Vault";
+  if (s.startsWith("machinelearningservices/")) return "Azure ML";
+  if (s.startsWith("operationalinsights/")) return "Log Analytics";
+  if (s.startsWith("insights/")) return "Azure Monitor";
+  if (s.startsWith("storage/")) return "Storage";
+  return String(t || "").split("/").pop();
+}
+const byType = {};
+D.recursos.forEach((r) => {
+  const key = friendlyType(r.tipo);
+  byType[key] = (byType[key] || 0) + 1;
+});
+const recursosHtml = Object.entries(byType)
+  .sort((a, b) => b[1] - a[1])
+  .map(([tipo, count]) => `<li><code>${esc(tipo)}</code> ${count}</li>`)
+  .join("");
+$("resources").innerHTML = `<li class="muted">${D.recursos.length} recursos en la corrida de referencia</li>` + recursosHtml;
+
+const runtime = {
+  Running: `El contenedor de inferencia está en ejecución en ${D.endpoint.url}. Se detiene al terminar cada demostración para no consumir crédito.`,
+  Stopped: `El contenedor de inferencia está detenido (costo de cómputo cero). Se enciende con <code>az container start -n aci-mlopslab-dev-inference -g rg-mlopslab-dev</code> y responde en ${D.endpoint.url}.`,
+  Eliminado: `El entorno se eliminó el ${D.cierre || D.generado} para no seguir consumiendo crédito. Los datos de esta página corresponden a la corrida del 17-11 y se conservan como evidencia. Se recrea con <code>pwsh -File scripts/azure_up.ps1 -Stage all -ImageTag v3</code>.`,
+}[D.endpoint.estado] || `Estado actual del entorno: ${D.endpoint.estado}. Se recrea con <code>pwsh -File scripts/azure_up.ps1 -Stage all -ImageTag v3</code>.`;
+$("runtime").innerHTML = runtime;
+</script>
+</body>
+</html>

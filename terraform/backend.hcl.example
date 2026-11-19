@@ -1,0 +1,8 @@
+# Copiar como backend.hcl (está en .gitignore) y usar con:
+#   terraform init -backend-config=backend.hcl
+# Los nombres deben coincidir con los que crea scripts/bootstrap_tfstate.sh
+resource_group_name  = "rg-tfstate-mlops"
+storage_account_name = "sttfstatemlopslab"
+container_name       = "tfstate"
+key                  = "mlopslab-dev.tfstate"
+use_azuread_auth     = true

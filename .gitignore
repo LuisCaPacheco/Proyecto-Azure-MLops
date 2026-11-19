@@ -1,0 +1,38 @@
+# Terraform: excluir artefactos locales, conservar lock y plantillas
+.terraform/
+**/.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfvars
+*.tfplan
+backend.hcl
+# .terraform.lock.hcl se versiona: fija las versiones exactas de los providers.
+# (Terraform lo recomienda; ver terraform/README.md)
+
+# Python & Entornos
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+.venv-*/
+env/
+venv/
+*.env
+
+# Azure / MLflow
+.azureml/
+mlruns/
+mlruns.db
+outputs/
+.pytest_cache/
+**/.pytest_cache/
+
+# Datos de trabajo generados; las fuentes crudas se conservan en archive*/
+ml/data/enape.csv
+ml/data/dropout.csv
+
+# VSCode & IDEs
+.vscode/
+.idea/
+.DS_Store

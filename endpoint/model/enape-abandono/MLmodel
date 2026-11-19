@@ -1,0 +1,46 @@
+flavors:
+  python_function:
+    env:
+      conda: conda.yaml
+      virtualenv: python_env.yaml
+    loader_module: mlflow.sklearn
+    model_path: model.pkl
+    predict_fn: predict
+    python_version: 3.14.3
+  sklearn:
+    code: null
+    pickled_model: model.pkl
+    serialization_format: cloudpickle
+    sklearn_version: 1.9.1
+    skops_trusted_types: null
+is_signature_from_type_hint: false
+metadata:
+  classes:
+  - Continua
+  - Abandona
+mlflow_version: 3.18.0
+model_id: null
+model_size_bytes: 11473936
+model_uuid: 2970a1e2bf1844d88caa26f00fcee7bf
+prompts: null
+saved_input_example_info:
+  artifact_path: input_example.json
+  pandas_orient: split
+  serving_input_path: serving_input_example.json
+  type: dataframe
+signature:
+  inputs: '[{"type": "long", "name": "sexo", "required": true}, {"type": "long", "name":
+    "edad", "required": true}, {"type": "long", "name": "edu_inicial", "required":
+    true}, {"type": "long", "name": "nivel_edu", "required": true}, {"type": "long",
+    "name": "terminado", "required": true}, {"type": "long", "name": "ent", "required":
+    true}, {"type": "long", "name": "q_personas", "required": true}, {"type": "long",
+    "name": "q_hombres", "required": true}, {"type": "long", "name": "q_mujeres",
+    "required": true}, {"type": "long", "name": "menores_30", "required": true}, {"type":
+    "long", "name": "pc", "required": true}, {"type": "long", "name": "laptop", "required":
+    true}, {"type": "long", "name": "tv_plana", "required": true}, {"type": "long",
+    "name": "tablet", "required": true}, {"type": "long", "name": "smartphone", "required":
+    true}, {"type": "long", "name": "internet_f", "required": true}]'
+  outputs: '[{"type": "tensor", "tensor-spec": {"dtype": "int64", "shape": [-1]}}]'
+  params: null
+type_hint_from_example: false
+utc_time_created: '2026-11-19 03:11:00.960392'

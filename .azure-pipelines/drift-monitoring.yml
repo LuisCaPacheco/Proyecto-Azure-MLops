@@ -1,0 +1,168 @@
+# Monitoreo programado del modelo (Etapa 4): data drift + accuracy decay
+#
+# Todos los días lee de Log Analytics las inferencias de las últimas 24 h
+# (logs JSON del contenedor ACI, event=inference), las compara con el perfil
+# de referencia del modelo en Production (PSI + KS) y, si hay drift
+# significativo, publica el reporte y lanza el pipeline de reentrenamiento.
+#
+# Además cruza las predicciones con los resultados reales reportados en
+# POST /feedback (últimos 30 días) y, si la accuracy observada cae bajo la
+# de referencia, también lanza el reentrenamiento (accuracy decay).
+
+trigger: none
+pr: none
+
+# Requiere la conexión ARM sc-azure-mlops, el grupo mlops-dev y permisos
+# Build Service para usar System.AccessToken al lanzar el pipeline de train.
+
+schedules:
+  - cron: "0 11 * * *"   # 06:00 hora Colombia
+    displayName: Drift diario
+    branches:
+      include: [main]
+    always: true
+
+variables:
+  - group: mlops-dev
+  - name: azureSubscription
+    value: sc-azure-mlops
+  # Deben coincidir con project_name / environment de Terraform
+  - name: project
+    value: mlopslab
+  - name: env
+    value: dev
+  - name: resourceGroup
+    value: rg-$(project)-$(env)
+  - name: workspace
+    value: mlw-$(project)-$(env)
+  - name: lawName
+    value: log-$(project)-$(env)
+  - name: trainingPipelineId
+    value: "1"   # id del pipeline azure-pipelines.yml en Azure DevOps
+
+pool:
+  vmImage: ubuntu-latest
+
+stages:
+  - stage: Drift
+    jobs:
+      - job: check
+        steps:
+          - task: UsePythonVersion@0
+            inputs: { versionSpec: "3.12" }
+          - checkout: self
+          - task: AzureCLI@2
+            name: drift
+            displayName: Consultar inferencias y calcular drift
+            inputs:
+              azureSubscription: $(azureSubscription)
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+                pip install -q pandas numpy scipy "mlflow>=2.12,<3" azureml-mlflow
+                export PYTHONPATH="$(Build.SourcesDirectory):${PYTHONPATH:-}"
+                az extension add -n ml -y
+                az extension add -n log-analytics -y
+
+                cd "$(Build.SourcesDirectory)"
+                mkdir -p monitoring-output
+                cd monitoring-output
+                # 1. Perfil de referencia del modelo en Production
+                export MLFLOW_TRACKING_URI=$(az ml workspace show -n $(workspace) -g $(resourceGroup) \
+                  --query mlflow_tracking_uri -o tsv)
+                python - <<'EOF'
+                import sys
+                import mlflow
+                from mlflow.tracking import MlflowClient
+
+                client = MlflowClient()
+                versions = []
+                # API de stages (MLflow 2.x / Azure ML) con respaldo al alias
+                # `production` (MLflow 3.x / registries sin stages).
+                try:
+                    versions = client.search_model_versions("name='enape-abandono' and stage='Production'")
+                except Exception:
+                    versions = []
+                if not versions:
+                    try:
+                        versions = [client.get_model_version_by_alias("enape-abandono", "production")]
+                    except Exception:
+                        versions = []
+                if not versions:
+                    sys.exit(
+                        "No hay versión en Production de enape-abandono. "
+                        "Entrena, pasa el gate y promueve un modelo antes de monitorear drift."
+                    )
+                mlflow.artifacts.download_artifacts(
+                    run_id=versions[0].run_id, artifact_path="evaluation", dst_path="."
+                )
+                EOF
+
+                # 2. Inferencias de las últimas 24 h desde Log Analytics
+                LAW_ID=$(az monitor log-analytics workspace show -n $(lawName) -g $(resourceGroup) \
+                  --query customerId -o tsv)
+                az monitor log-analytics query -w "$LAW_ID" -o json --analytics-query "
+                  ContainerInstanceLog_CL
+                  | where TimeGenerated > ago(24h)
+                  | where Message contains '"event": "inference"'
+                  | project Message" | python -c "import json,sys; [print(r['Message']) for r in json.load(sys.stdin)]" > inference.log
+                echo "Inferencias: $(wc -l < inference.log)"
+
+                # 3. Drift
+                set +e
+                python -m ml.monitoring.drift --reference evaluation/reference_profile.json \
+                  --current-logs inference.log --output drift.json --markdown drift.md --fail-on-drift
+                CODE=$?
+                set -e
+                cat drift.md || true
+                [[ -f drift.md ]] && echo "##vso[task.uploadsummary]$(pwd)/drift.md" || true
+
+                # 4. Accuracy decay: predicciones con resultado real (POST /feedback)
+                az monitor log-analytics query -w "$LAW_ID" -o json --analytics-query "
+                  ContainerInstanceLog_CL
+                  | where TimeGenerated > ago(30d)
+                  | where Message contains '"event": "inference"' or Message contains '"event": "feedback"'
+                  | project Message" | python -c "import json,sys; [print(r['Message']) for r in json.load(sys.stdin)]" > labeled.log
+                set +e
+                python -m ml.monitoring.performance --logs labeled.log --reference evaluation/metrics.json \
+                  --output decay.json --markdown decay.md --fail-on-decay
+                DECAY=$?
+                set -e
+                cat decay.md || true
+                [[ -f decay.md ]] && echo "##vso[task.uploadsummary]$(pwd)/decay.md" || true
+
+                if [[ $CODE -eq 1 || $DECAY -eq 1 ]]; then
+                  echo "##vso[task.setvariable variable=retrain;isOutput=true]true"
+                else
+                  echo "##vso[task.setvariable variable=retrain;isOutput=true]false"
+                fi
+          - script: |
+              cd "$(Build.SourcesDirectory)/monitoring-output"
+              # El publish con always() falla si el reporte no se generó (por
+              # ejemplo, si no hay modelo en Production). Deja un placeholder
+              # para conservar el artefacto y la causa en el log del job.
+              [[ -f drift.json ]] || echo '{"status": "not-generated"}' > drift.json
+              [[ -f decay.json ]] || echo '{"status": "not-generated"}' > decay.json
+            displayName: Asegurar artefactos de monitoreo
+            condition: always()
+          - publish: $(Build.SourcesDirectory)/monitoring-output/drift.json
+            artifact: drift-report
+            condition: always()
+          - publish: $(Build.SourcesDirectory)/monitoring-output/decay.json
+            artifact: decay-report
+            condition: always()
+
+  - stage: Retrain
+    dependsOn: Drift
+    condition: eq(dependencies.Drift.outputs['check.drift.retrain'], 'true')
+    jobs:
+      - job: trigger
+        steps:
+          - script: |
+              az extension add -n azure-devops -y
+              az pipelines run --id $(trainingPipelineId) --branch main \
+                --org $(System.CollectionUri) --project "$(System.TeamProject)"
+            displayName: Lanzar pipeline de reentrenamiento
+            env:
+              AZURE_DEVOPS_EXT_PAT: $(System.AccessToken)

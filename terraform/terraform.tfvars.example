@@ -1,0 +1,32 @@
+# Copiar como terraform.tfvars (está en .gitignore):
+#   Copy-Item terraform.tfvars.example terraform.tfvars
+#
+# Project/environment/location deben coincidir con Azure Pipelines y
+# terraform/backend.hcl.example (state key mlopslab-dev.tfstate).
+# Para Azure Pipelines, estos valores se configuran en variables/variable group;
+# este archivo es la configuración local de Terraform.
+project_name = "mlopslab" # nombre global único; max 10 caracteres
+environment  = "dev"
+location     = "centralus"
+
+# Entrenamiento
+compute_vm_size     = "Standard_DS3_v2"
+compute_min_nodes   = 0
+compute_max_nodes   = 4 # reducir si la cuota regional no lo permite
+compute_vm_priority = "Dedicated"
+
+# Inferencia (crear solo después de publicar la imagen endpoint:<tag>)
+deploy_aci         = false
+endpoint_image_tag = "v3"
+aci_cpu            = 1
+aci_memory         = 1.5
+rate_limit_per_min = 60
+
+# Monitoreo (dejar [] si no se configuran notificaciones por correo)
+alert_emails             = []
+aci_cpu_alert_threshold  = 0.8
+latency_p99_threshold_ms = 500
+
+# RBAC opcional: object IDs de Entra ID
+data_scientist_object_ids = []
+reader_object_ids          = []

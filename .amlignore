@@ -1,0 +1,21 @@
+.git/
+.terraform/
+**/.terraform/
+*.tfstate*
+*.tfplan
+**/*.tfplan
+__pycache__/
+**/__pycache__/
+*.pyc
+.pytest_cache/
+**/.pytest_cache/
+.venv/
+.venv-*/
+venv/
+mlruns/
+mlruns.db
+outputs/
+
+# CSV derivados: se reconstruyen desde las fuentes versionadas con load_enape.py.
+ml/data/enape.csv
+ml/data/dropout.csv

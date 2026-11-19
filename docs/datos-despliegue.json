@@ -1,0 +1,183 @@
+{
+  "generado": "2026-11-18 22:15",
+  "cierre": "2026-11-18",
+  "cuenta": {
+    "suscripcion": "Azure subscription 1"
+  },
+  "resource_group": "rg-mlopslab-dev",
+  "endpoint": {
+    "imagen": "acrmlopslabdev.azurecr.io/endpoint:v2",
+    "url": "http://mlops-mlopslab-dev.centralus.azurecontainer.io:8000",
+    "estado": "Eliminado"
+  },
+  "job": {
+    "experimento": "dropout-training",
+    "nombre": "mighty_nut_8jvyq81p06",
+    "compute": "cpu-cluster",
+    "estado": "Completed"
+  },
+  "modelo": {
+    "stage": "Staging",
+    "data_asset": "enape-abandono:pendiente",
+    "tags": [
+      "latest",
+      "v1",
+      "v2"
+    ],
+    "nombre": "enape-abandono",
+    "version": "local"
+  },
+  "dataset": {
+    "nombre": "ENAPE 2021",
+    "fuente": "INEGI · Encuesta Nacional de Acceso y Permanencia en la Educación",
+    "archivo": "df03_Dataset_ENAPE.csv",
+    "filas_crudas": 32343,
+    "columnas_crudas": 67,
+    "cohorte": 18207,
+    "positivos": 1179,
+    "porcentaje_positivos": 6.48,
+    "features": 18,
+    "features_modelo": 16,
+    "duplicados": 127,
+    "clases": [
+      { "nombre": "Continua", "filas": 17028, "porcentaje": 93.52 },
+      { "nombre": "Abandona", "filas": 1179, "porcentaje": 6.48 }
+    ],
+    "nota": "Cohorte: inscritos en 2020-2021, 6 años o más, con situación conocida en 2021-2022 y sin egreso por meta cumplida."
+  },
+  "metricas": {
+    "accuracy": 0.8577704557935201,
+    "f1_macro": 0.656441373683808,
+    "roc_auc": 0.8616505518675914,
+    "pr_auc": 0.40403365434465954,
+    "fuente": "validación local · 18-11",
+    "per_class": {
+      "Continua": {
+        "precision": 0.9775132275132276,
+        "recall": 0.8678802113916618,
+        "f1": 0.9194401244167962,
+        "support": 3406
+      },
+      "Abandona": {
+        "precision": 0.27184466019417475,
+        "recall": 0.711864406779661,
+        "f1": 0.39344262295081966,
+        "support": 236
+      }
+    }
+  },
+  "pruebas": {
+    "passed": 52,
+    "total": 52,
+    "fuente": "corrida local previa al empaquetado (2026-11-18)"
+  },
+  "recursos": [
+    { "nombre": "aci-mlopslab-dev-inference", "tipo": "ContainerInstance/containerGroups", "region": "centralus" },
+    { "nombre": "acrmlopslabdev", "tipo": "ContainerRegistry/registries", "region": "centralus" },
+    { "nombre": "adf-mlopslab-dev", "tipo": "DataFactory/factories", "region": "centralus" },
+    { "nombre": "ag-mlopslab-dev", "tipo": "Insights/actiongroups", "region": "global" },
+    { "nombre": "appi-mlopslab-dev", "tipo": "Insights/components", "region": "centralus" },
+    { "nombre": "alert-mlopslab-dev-aci-cpu", "tipo": "Insights/metricalerts", "region": "global" },
+    { "nombre": "alert-mlopslab-dev-endpoint-errors", "tipo": "Insights/scheduledqueryrules", "region": "centralus" },
+    { "nombre": "alert-mlopslab-dev-latency-p99", "tipo": "Insights/scheduledqueryrules", "region": "centralus" },
+    { "nombre": "a52e1f74-bd11-6ed1-3134-2ffbbd2c229b", "tipo": "Insights/workbooks", "region": "centralus" },
+    { "nombre": "kv-mlopslab-dev", "tipo": "KeyVault/vaults", "region": "centralus" },
+    { "nombre": "mlw-mlopslab-dev", "tipo": "MachineLearningServices/workspaces", "region": "centralus" },
+    { "nombre": "log-mlopslab-dev", "tipo": "OperationalInsights/workspaces", "region": "centralus" },
+    { "nombre": "stmlopslabdev001", "tipo": "Storage/storageAccounts", "region": "centralus" }
+  ],
+  "etapas": [
+    {
+      "que": "Storage con el tfstate versionado",
+      "nombre": "Estado remoto",
+      "resultado": "rg-tfstate-mlops / sttfstatemlopslab",
+      "estado": "ok"
+    },
+    {
+      "que": "Workspace, storage, ACR, Key Vault, logs y cómputo",
+      "nombre": "Infraestructura",
+      "resultado": "27 recursos gestionados",
+      "estado": "ok"
+    },
+    {
+      "que": "Ingesta a Blob y limpieza con Data Factory",
+      "nombre": "Datos",
+      "resultado": "ADF Succeeded, 859 filas rechazadas",
+      "estado": "ok"
+    },
+    {
+      "que": "Job de Azure ML con MLflow y registro del modelo",
+      "nombre": "Entrenamiento",
+      "resultado": "mighty_nut_8jvyq81p06, Completed",
+      "estado": "ok"
+    },
+    {
+      "que": "Build y push del endpoint a ACR",
+      "nombre": "Imagen",
+      "resultado": "acrmlopslabdev.azurecr.io/endpoint:v2",
+      "estado": "ok"
+    },
+    {
+      "que": "Contenedor en ACI con 1 vCPU y 1.5 GB",
+      "nombre": "Inferencia",
+      "resultado": "Running en la demo; stopped al cerrar",
+      "estado": "ok"
+    },
+    {
+      "que": "/health, /predict y /feedback contra Azure",
+      "nombre": "Verificación",
+      "resultado": "4/4 pruebas OK",
+      "estado": "ok"
+    },
+    {
+      "que": "Pipeline de Azure Pipelines con gate y aprobación",
+      "nombre": "CI/CD",
+      "resultado": "definido, falta service connection",
+      "estado": "parcial"
+    }
+  ],
+  "evidencias": [
+    {
+      "esperado": "200",
+      "prueba": "GET /health",
+      "obtenido": "ok, modelo v1",
+      "ok": true
+    },
+    {
+      "esperado": "401",
+      "prueba": "POST /predict sin API key",
+      "obtenido": "401",
+      "ok": true
+    },
+    {
+      "esperado": "200",
+      "prueba": "POST /predict con API key",
+      "obtenido": "Dropout, riesgo 0.8775",
+      "ok": true
+    },
+    {
+      "esperado": "202",
+      "prueba": "POST /feedback",
+      "obtenido": "202",
+      "ok": true
+    }
+  ],
+  "enlaces": [
+    {
+      "texto": "Resource group",
+      "url": "https://portal.azure.com/#@91210fa4-d4ad-4a79-b6d7-cf6f3f00561e/resource/subscriptions/d0dfb29a-c936-4343-9aed-7b2040166d75/resourceGroups/rg-mlopslab-dev/overview"
+    },
+    {
+      "texto": "Azure ML Studio",
+      "url": "https://ml.azure.com/?wsid=/subscriptions/d0dfb29a-c936-4343-9aed-7b2040166d75/resourcegroups/rg-mlopslab-dev/workspaces/mlw-mlopslab-dev"
+    },
+    {
+      "texto": "Job de entrenamiento",
+      "url": "https://ml.azure.com/runs/=/subscriptions/d0dfb29a-c936-4343-9aed-7b2040166d75/resourcegroups/rg-mlopslab-dev/workspaces/mlw-mlopslab-dev"
+    },
+    {
+      "texto": "Container Registry",
+      "url": "https://portal.azure.com/#@91210fa4-d4ad-4a79-b6d7-cf6f3f00561e/resource/subscriptions/d0dfb29a-c936-4343-9aed-7b2040166d75/resourceGroups/rg-mlopslab-dev/providers/Microsoft.ContainerRegistry/registries/acrmlopslabdev"
+    }
+  ]
+}

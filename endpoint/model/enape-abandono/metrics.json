@@ -1,0 +1,24 @@
+{
+  "run_id": "612c1b13bed24b09b68b58df8946148d",
+  "model_uri": "models:/m-861e6861ef8c49a195f31163eaa56a73",
+  "accuracy": 0.8577704557935201,
+  "f1_macro": 0.656441373683808,
+  "roc_auc": 0.8616505518675914,
+  "pr_auc": 0.40403365434465954,
+  "per_class": {
+    "Continua": {
+      "precision": 0.9775132275132276,
+      "recall": 0.8678802113916618,
+      "f1": 0.9194401244167962,
+      "support": 3406
+    },
+    "Abandona": {
+      "precision": 0.27184466019417475,
+      "recall": 0.711864406779661,
+      "f1": 0.39344262295081966,
+      "support": 236
+    }
+  },
+  "class_failures": [],
+  "registry": null
+}

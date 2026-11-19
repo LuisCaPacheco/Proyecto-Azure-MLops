@@ -1,0 +1,352 @@
+# Pipeline MLOps CI/CD (Etapa 4) - Proyecto P07 The Odyssey
+#
+# CI  -> lint + pruebas unitarias (en cada PR y push)
+# CD  -> DataPrep (validar + Azure Data Factory) -> Train (Azure ML, registra en Staging)
+#     -> Evaluate (gate vs Production) -> Build & Push (ACR) -> Deploy (ACI) -> Smoke test
+#     -> Promote (Staging -> Production, solo si el despliegue quedó sano)
+#
+# Requisitos en Azure DevOps:
+# - Service connection ARM "sc-azure-mlops" (Workload Identity) con rol Contributor
+#   sobre rg-mlopslab-dev (incluye ejecutar el pipeline de Data Factory y el
+#   apply de Terraform), "Storage Blob Data Contributor" sobre el storage de
+#   datos y sobre la cuenta del state (sttfstatemlopslab).
+# - Variable group "mlops-dev" (vinculado a Key Vault kv-mlopslab-dev) con el
+#   secreto "endpoint-api-key" que genera Terraform. La identidad del proyecto
+#   de Azure DevOps necesita "Key Vault Secrets User" sobre el Key Vault.
+# - Environment "production" con aprobación manual (gate humano antes de ACI).
+# - Azure CLI y las extensiones ml/datafactory disponibles en el agente.
+# - Docker disponible en el job BuildPush.
+
+trigger:
+  branches:
+    include: [main]
+  paths:
+    include: [ml/*, endpoint/*, terraform/*, scripts/*, .azure-pipelines/*, .amlignore]
+
+pr:
+  branches:
+    include: [main]
+  paths:
+    include: [ml/*, endpoint/*, terraform/*, scripts/*, .azure-pipelines/*, .amlignore]
+
+variables:
+  - group: mlops-dev
+  - name: azureSubscription
+    value: sc-azure-mlops
+  # Deben coincidir con project_name / environment / location de Terraform
+  - name: project
+    value: mlopslab
+  - name: env
+    value: dev
+  - name: location
+    value: centralus
+  - name: resourceGroup
+    value: rg-$(project)-$(env)
+  - name: workspace
+    value: mlw-$(project)-$(env)
+  - name: storageAccount
+    value: st$(project)$(env)001
+  - name: dataFactory
+    value: adf-$(project)-$(env)
+  - name: acrName
+    value: acr$(project)$(env)
+  - name: aciName
+    value: aci-$(project)-$(env)-inference
+  - name: dnsLabel
+    value: mlops-$(project)-$(env)
+  - name: appInsights
+    value: appi-$(project)-$(env)
+  - name: logAnalytics
+    value: log-$(project)-$(env)
+  # Backend remoto de Terraform (debe coincidir con terraform/backend.hcl.example
+  # y con scripts/bootstrap_tfstate.sh). El state key cambia si cambias project/env.
+  - name: tfStateResourceGroup
+    value: rg-tfstate-mlops
+  - name: tfStateStorage
+    value: sttfstatemlopslab
+  - name: tfStateContainer
+    value: tfstate
+  - name: tfStateKey
+    value: mlopslab-dev.tfstate
+  - name: terraformVersion
+    value: "1.17.1"
+  - name: imageTag
+    value: $(Build.BuildId)
+  - name: pythonVersion
+    value: "3.12"
+  - name: isMain
+    value: $[eq(variables['Build.SourceBranch'], 'refs/heads/main')]
+
+pool:
+  vmImage: ubuntu-latest
+
+stages:
+  # -------------------------------------------------------------------------
+  - stage: CI
+    displayName: "CI - lint y pruebas"
+    jobs:
+      - job: tests
+        steps:
+          - task: UsePythonVersion@0
+            inputs: { versionSpec: "$(pythonVersion)" }
+          - script: |
+              set -euo pipefail
+              pip install -r ml/requirements.txt
+              python -m ml.data.load_enape
+              python -m ml.data.validate --data ml/data/enape.csv --expected-rows 18207
+            displayName: Instalar dependencias, generar y validar ENAPE
+          - script: |
+              set -euo pipefail
+              mkdir -p test-results
+              flake8 ml endpoint --max-line-length 120
+            displayName: Lint (flake8)
+          - script: python -m pytest ml/tests -v --junitxml=test-results/ml.xml
+            displayName: Pruebas unitarias ml/
+          - script: python -m pytest endpoint/tests -v --junitxml=test-results/endpoint.xml
+            displayName: Pruebas unitarias endpoint/
+          - publish: ml/data/enape.csv
+            artifact: enape-validation-input
+          - task: PublishTestResults@2
+            condition: always()
+            inputs:
+              testResultsFiles: test-results/*.xml
+              testRunTitle: Pruebas unitarias
+              publishRunAttachments: true
+
+  # -------------------------------------------------------------------------
+  - stage: DataPrep
+    displayName: "Datos: validar -> raw -> Data Factory -> processed + Data Asset"
+    dependsOn: CI
+    condition: and(succeeded(), eq(variables.isMain, true))
+    jobs:
+      - job: dataprep
+        timeoutInMinutes: 45
+        steps:
+          - task: UsePythonVersion@0
+            inputs: { versionSpec: "$(pythonVersion)" }
+          - script: |
+              set -euo pipefail
+              pip install -q pandas scikit-learn==1.9.1
+              export PYTHONPATH="$(Build.SourcesDirectory):${PYTHONPATH:-}"
+              python -m ml.data.load_enape
+              mkdir -p $(Build.ArtifactStagingDirectory)
+              python -m ml.data.validate --data ml/data/enape.csv --expected-rows 18207 \
+                --report $(Build.ArtifactStagingDirectory)/validation.json
+            displayName: Generar la cohorte ENAPE 2021 y validar el dataset
+          - publish: $(Build.ArtifactStagingDirectory)/validation.json
+            artifact: data-validation
+            condition: always()
+          - task: AzureCLI@2
+            displayName: Subir a raw, depurar con Data Factory y registrar enape-abandono
+            inputs:
+              azureSubscription: $(azureSubscription)
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+                az extension add -n ml -y
+                az extension add -n datafactory -y
+                export DATA_VERSION=$(date +%Y%m%d%H%M)
+                bash ml/data/upload_to_blob.sh $(storageAccount)
+                bash ml/data/run_adf_pipeline.sh $(dataFactory) $(storageAccount) $(workspace) $(resourceGroup)
+
+  # -------------------------------------------------------------------------
+  - stage: Train
+    displayName: "Entrenamiento en Azure ML (cpu-cluster)"
+    dependsOn: DataPrep
+    jobs:
+      - job: train
+        timeoutInMinutes: 90
+        steps:
+          - task: AzureCLI@2
+            displayName: Lanzar job y esperar
+            inputs:
+              azureSubscription: $(azureSubscription)
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+                az extension add -n ml -y
+                export PYTHONPATH="$(Build.SourcesDirectory):${PYTHONPATH:-}"
+                mkdir -p $(Build.ArtifactStagingDirectory)
+                cd "$(Build.SourcesDirectory)"
+                JOB=$(az ml job create -f ml/pipeline/job.yaml \
+                  --set inputs.data.path=azureml:enape-abandono@latest \
+                  --workspace-name $(workspace) -g $(resourceGroup) --query name -o tsv)
+                echo "Job: $JOB"
+                deadline=$((SECONDS + 7200))
+                status="Queued"
+                while (( SECONDS < deadline )); do
+                  status=$(az ml job show -n "$JOB" --workspace-name $(workspace) -g $(resourceGroup) --query status -o tsv)
+                  echo "Estado: $status"
+                  case "$status" in
+                    Completed) break ;;
+                    Failed|Canceled) echo "Job terminó en $status"; exit 1 ;;
+                  esac
+                  sleep 30
+                done
+                [[ "$status" == "Completed" ]] || { echo "Timeout esperando job; estado: $status"; exit 1; }
+                az ml job download -n "$JOB" --output-name metrics --download-path job_out \
+                  --workspace-name $(workspace) -g $(resourceGroup)
+                metrics_file=$(find job_out -name metrics.json -print -quit)
+                [[ -n "$metrics_file" && -s "$metrics_file" ]] || { echo "No se descargó metrics.json"; exit 1; }
+                cp "$metrics_file" $(Build.ArtifactStagingDirectory)/metrics.json
+          - publish: $(Build.ArtifactStagingDirectory)/metrics.json
+            artifact: train-metrics
+
+  # -------------------------------------------------------------------------
+  - stage: Evaluate
+    displayName: "Gate: PR-AUC, recall por clase y regresión vs Production"
+    dependsOn: Train
+    jobs:
+      - job: gate
+        steps:
+          - download: current
+            artifact: train-metrics
+          - checkout: self
+          - task: UsePythonVersion@0
+            inputs: { versionSpec: "$(pythonVersion)" }
+          - task: AzureCLI@2
+            name: decision
+            displayName: Evaluar candidato
+            inputs:
+              azureSubscription: $(azureSubscription)
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+                pip install -q "mlflow>=2.12,<3" azureml-mlflow scikit-learn==1.9.1 pandas
+                export PYTHONPATH="$(Build.SourcesDirectory):${PYTHONPATH:-}"
+                az extension add -n ml -y
+                export MLFLOW_TRACKING_URI=$(az ml workspace show -n $(workspace) -g $(resourceGroup) \
+                  --query mlflow_tracking_uri -o tsv)
+                # El job dejó al candidato en Staging; aquí se compara contra la versión
+                # en Production. Solo si es mejor se empaqueta, se despliega y se promueve.
+                python -m ml.pipeline.evaluate \
+                  --metrics-file $(Pipeline.Workspace)/train-metrics/metrics.json \
+                  --output evaluation.json
+                DEPLOY=$(python -c "import json;print(str(json.load(open('evaluation.json'))['deploy']).lower())")
+                VERSION=$(python -c "import json;print(json.load(open('evaluation.json'))['candidate_version'])")
+                echo "##vso[task.setvariable variable=deploy;isOutput=true]$DEPLOY"
+                echo "##vso[task.setvariable variable=version;isOutput=true]$VERSION"
+          - publish: evaluation.json
+            artifact: gate-decision
+
+  # -------------------------------------------------------------------------
+  - stage: BuildPush
+    displayName: "Empaquetar endpoint y publicar en ACR"
+    dependsOn: Evaluate
+    condition: and(succeeded(), eq(dependencies.Evaluate.outputs['gate.decision.deploy'], 'true'))
+    jobs:
+      - job: image
+        variables:
+          candidateVersion: $[ stageDependencies.Evaluate.gate.outputs['decision.version'] ]
+        steps:
+          - checkout: self
+          - task: UsePythonVersion@0
+            inputs: { versionSpec: "$(pythonVersion)" }
+          - task: AzureCLI@2
+            displayName: Descargar modelo, probar, construir y publicar
+            inputs:
+              azureSubscription: $(azureSubscription)
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+                az extension add -n ml -y
+                export PYTHONPATH="$(Build.SourcesDirectory):${PYTHONPATH:-}"
+                cd endpoint
+                # La versión candidata (Staging) que aprobó el gate, no la de Production
+                bash download_model.sh $(workspace) $(resourceGroup) $(candidateVersion)
+                pip install -q -r requirements.txt pytest httpx
+                pytest tests -v
+                docker info >/dev/null
+                az acr login -n $(acrName)
+                docker build -t $(acrName).azurecr.io/endpoint:$(imageTag) \
+                             -t $(acrName).azurecr.io/endpoint:latest .
+                docker push --all-tags $(acrName).azurecr.io/endpoint
+
+  # -------------------------------------------------------------------------
+  - stage: Deploy
+    displayName: "Desplegar en ACI + smoke test + promover a Production"
+    dependsOn: [Evaluate, BuildPush]
+    condition: and(succeeded(), eq(dependencies.Evaluate.outputs['gate.decision.deploy'], 'true'))
+    jobs:
+      - deployment: aci
+        environment: production   # aprobación manual configurada en el environment
+        variables:
+          candidateVersion: $[ stageDependencies.Evaluate.gate.outputs['decision.version'] ]
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                # Terraform es el único dueño del ACI (identidad, liveness probe,
+                # variables seguras y diagnóstico a Log Analytics). No se usa
+                # `az container create`: hace un PUT completo y borraría esa
+                # configuración. El apply solo toca el contenedor de inferencia.
+                - task: TerraformInstaller@0
+                  displayName: Instalar Terraform
+                  inputs:
+                    terraformVersion: $(terraformVersion)
+                - task: AzureCLI@2
+                  displayName: Terraform apply (nueva imagen en ACI)
+                  inputs:
+                    azureSubscription: $(azureSubscription)
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    inlineScript: |
+                      set -euo pipefail
+                      export TF_IN_AUTOMATION=1
+                      export ARM_USE_OIDC=true
+                      export ARM_USE_CLI=true
+                      cd terraform
+                      cat > backend.hcl <<EOF
+                      resource_group_name  = "$(tfStateResourceGroup)"
+                      storage_account_name = "$(tfStateStorage)"
+                      container_name       = "$(tfStateContainer)"
+                      key                  = "$(tfStateKey)"
+                      use_azuread_auth     = true
+                      EOF
+                      terraform init -backend-config=backend.hcl -input=false
+                      terraform apply -auto-approve -input=false -lock-timeout=5m \
+                        -target=azurerm_container_group.inference \
+                        -var="project_name=$(project)" \
+                        -var="environment=$(env)" \
+                        -var="location=$(location)" \
+                        -var="deploy_aci=true" \
+                        -var="endpoint_image_tag=$(imageTag)"
+                - script: |
+                    set -euo pipefail
+                    URL=http://$(dnsLabel).$(location).azurecontainer.io:8000
+                    READY=false
+                    for i in $(seq 1 30); do
+                      if curl -fs $URL/health; then READY=true; break; fi
+                      sleep 10
+                    done
+                    [[ "$READY" == "true" ]] || { echo "Endpoint no alcanzó health en 5 minutos"; exit 1; }
+                    CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST $URL/predict \
+                      -H "Content-Type: application/json" -d @endpoint/examples/estudiante_riesgo_alto.json)
+                    [[ "$CODE" == "401" ]] || { echo "Se esperaba 401 sin API key y llegó $CODE"; exit 1; }
+                    curl -fs -o prediction.json -X POST $URL/predict -H "Content-Type: application/json" \
+                      -H "X-API-Key: $(endpoint-api-key)" -d @endpoint/examples/estudiante_riesgo_alto.json
+                    python -c "import json; x=json.load(open('prediction.json')); assert x.get('prediction_id') and x.get('model_version'), x"
+                  displayName: Smoke test (/health, 401 sin key, /predict)
+                - checkout: self
+                - task: UsePythonVersion@0
+                  inputs: { versionSpec: "$(pythonVersion)" }
+                - task: AzureCLI@2
+                  displayName: Promover el modelo desplegado a Production
+                  inputs:
+                    azureSubscription: $(azureSubscription)
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    inlineScript: |
+                      set -euo pipefail
+                      pip install -q "mlflow>=2.12,<3" azureml-mlflow
+                      export PYTHONPATH="$(Build.SourcesDirectory):${PYTHONPATH:-}"
+                      az extension add -n ml -y
+                      export MLFLOW_TRACKING_URI=$(az ml workspace show -n $(workspace) -g $(resourceGroup) \
+                        --query mlflow_tracking_uri -o tsv)
+                      # Solo llega aquí si el smoke test pasó: Production = lo que sirve el ACI
+                      python -m ml.pipeline.promote --version $(candidateVersion)

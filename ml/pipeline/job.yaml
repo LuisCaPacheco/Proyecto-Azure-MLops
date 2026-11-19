@@ -1,0 +1,46 @@
+﻿$schema: https://azuremlschemas.azureedge.net/latest/commandJob.schema.json
+type: command
+display_name: train-enape-abandono
+experiment_name: enape-training
+description: >-
+  Entrenamiento del modelo de abandono escolar ENAPE 2021 (INEGI, MÃ©xico) con
+  RandomForest + MLflow; registra enape-abandono en Staging. La promociÃ³n a
+  Production la decide el gate del pipeline (evaluate.py + promote.py).
+
+# Path relativo al cwd del CLI (raÃ­z del repo desde el script de despliegue).
+# Incluye `ml/` como paquete para `python -m ml.pipeline.train`.
+code: ../..
+
+# Comando que se ejecuta dentro del job.
+# MLflow dentro de un job de Azure ML apunta automÃ¡ticamente al workspace,
+# por lo que log_metric, log_model y register_model quedan en Azure ML.
+command: >-
+  python -m ml.pipeline.train
+  --data ${{inputs.data}}
+  --model-name enape-abandono
+  --n-estimators 300
+  --max-depth 10
+  --min-samples-leaf 3
+  --class-weight balanced_subsample
+  --baseline-accuracy 0.70
+  --metrics-output ${{outputs.metrics}}/metrics.json
+
+inputs:
+  data:
+    type: uri_file
+    # Local: se sube con el job. En CI se sobreescribe con el Data Asset depurado
+    # por Azure Data Factory (contenedor processed):
+    #   --set inputs.data.path=azureml:enape-abandono@latest
+    path: ../data/enape.csv
+
+outputs:
+  metrics:
+    type: uri_folder
+
+# Entorno (se crea a partir del conda.yaml la primera vez)
+environment:
+  image: mcr.microsoft.com/azureml/openmpi4.1.0-ubuntu20.04:latest
+  conda_file: ../environments/conda.yaml
+
+# Compute cluster creado por Terraform (terraform/training.tf)
+compute: azureml:cpu-cluster

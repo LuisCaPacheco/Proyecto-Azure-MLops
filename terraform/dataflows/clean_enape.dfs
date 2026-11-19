@@ -1,0 +1,127 @@
+source(allowSchemaDrift: true,
+	validateSchema: false,
+	ignoreNoFilesFound: false) ~> RawCsv
+RawCsv split(
+	isNull(toInteger(toString(byName('FOLIO')))) ||
+	isNull(toInteger(toString(byName('SEXO')))) ||
+	isNull(toInteger(toString(byName('EDAD')))) ||
+	isNull(toInteger(toString(byName('edu_inicial')))) ||
+	isNull(toInteger(toString(byName('inscrito')))) ||
+	isNull(toInteger(toString(byName('nivel_edu')))) ||
+	isNull(toInteger(toString(byName('terminado')))) ||
+	isNull(toInteger(toString(byName('inscrito_actual')))) ||
+	isNull(toInteger(toString(byName('nins_causa')))) ||
+	isNull(toInteger(toString(byName('q_personas')))) ||
+	isNull(toInteger(toString(byName('q_hombres')))) ||
+	isNull(toInteger(toString(byName('q_mujeres')))) ||
+	isNull(toInteger(toString(byName('x<30')))) ||
+	isNull(toInteger(toString(byName('pc')))) ||
+	isNull(toInteger(toString(byName('laptop')))) ||
+	isNull(toInteger(toString(byName('tv_plana')))) ||
+	isNull(toInteger(toString(byName('tablet')))) ||
+	isNull(toInteger(toString(byName('smartphone')))) ||
+	isNull(toInteger(toString(byName('InternetF')))) ||
+	isNull(toInteger(toString(byName('ENT')))) ||
+	isNull(toInteger(toString(byName('max_nivel_esp')))) ||
+	isNull(toInteger(toString(byName('entr_diagnost')))) ||
+	!in(['1'], toString(byName('inscrito'))) ||
+	toInteger(toString(byName('EDAD'))) < 6 ||
+	toInteger(toString(byName('EDAD'))) > 100 ||
+	!in(['1','2'], toString(byName('inscrito_actual'))) ||
+	toInteger(toString(byName('nins_causa'))) < 0 ||
+	toInteger(toString(byName('nins_causa'))) > 16 ||
+	!in(['0','1','2'], toString(byName('edu_inicial'))) ||
+	toInteger(toString(byName('nivel_edu'))) < 0 ||
+	toInteger(toString(byName('nivel_edu'))) > 12 ||
+	!in(['1','2'], toString(byName('terminado'))) ||
+	!in(['1','2'], toString(byName('SEXO'))) ||
+	!in(['1','2'], toString(byName('pc'))) ||
+	!in(['1','2'], toString(byName('laptop'))) ||
+	!in(['1','2'], toString(byName('tv_plana'))) ||
+	!in(['1','2'], toString(byName('tablet'))) ||
+	!in(['1','2'], toString(byName('smartphone'))) ||
+	!in(['1','2'], toString(byName('InternetF'))) ||
+	toInteger(toString(byName('ENT'))) < 1 ||
+	toInteger(toString(byName('ENT'))) > 32 ||
+	toInteger(toString(byName('q_personas'))) < 1 ||
+	toInteger(toString(byName('q_personas'))) > 30 ||
+	toInteger(toString(byName('q_hombres'))) < 0 ||
+	toInteger(toString(byName('q_hombres'))) > 30 ||
+	toInteger(toString(byName('q_mujeres'))) < 0 ||
+	toInteger(toString(byName('q_mujeres'))) > 30 ||
+	toInteger(toString(byName('x<30'))) < 0 ||
+	toInteger(toString(byName('x<30'))) > 30 ||
+	toInteger(toString(byName('max_nivel_esp'))) < 0 ||
+	toInteger(toString(byName('max_nivel_esp'))) > 9 ||
+	!in(['0','1','2','9'], toString(byName('entr_diagnost'))),
+	disjoint: false) ~> SplitRows@(Rejected, Valid)
+SplitRows@Valid derive(
+	sexo_out = iif(toInteger(toString(byName('SEXO'))) == 1, 1, 0),
+	edad_out = toInteger(toString(byName('EDAD'))),
+	edu_inicial_out = toInteger(toString(byName('edu_inicial'))),
+	nivel_edu_out = toInteger(toString(byName('nivel_edu'))),
+	terminado_out = iif(toInteger(toString(byName('terminado'))) == 1, 1, 0),
+	ent_out = toInteger(toString(byName('ENT'))),
+	q_personas_out = toInteger(toString(byName('q_personas'))),
+	q_hombres_out = toInteger(toString(byName('q_hombres'))),
+	q_mujeres_out = toInteger(toString(byName('q_mujeres'))),
+	menores_30_out = toInteger(toString(byName('x<30'))),
+	pc_out = iif(toInteger(toString(byName('pc'))) == 1, 1, 0),
+	laptop_out = iif(toInteger(toString(byName('laptop'))) == 1, 1, 0),
+	tv_plana_out = iif(toInteger(toString(byName('tv_plana'))) == 1, 1, 0),
+	tablet_out = iif(toInteger(toString(byName('tablet'))) == 1, 1, 0),
+	smartphone_out = iif(toInteger(toString(byName('smartphone'))) == 1, 1, 0),
+	internet_f_out = iif(toInteger(toString(byName('InternetF'))) == 1, 1, 0),
+	max_nivel_esp_out = toInteger(toString(byName('max_nivel_esp'))),
+	entr_diagnost_out = toInteger(toString(byName('entr_diagnost'))),
+	folio_out = toInteger(toString(byName('FOLIO'))),
+	abandono = iif(toInteger(toString(byName('inscrito_actual'))) == 2, 1, 0),
+	abandono_label = iif(toInteger(toString(byName('inscrito_actual'))) == 2, 'Abandona', 'Continua')) ~> DeriveFeatures
+DeriveFeatures select(mapColumn(
+	FOLIO = folio_out,
+	sexo = sexo_out,
+	edad = edad_out,
+	edu_inicial = edu_inicial_out,
+	nivel_edu = nivel_edu_out,
+	terminado = terminado_out,
+	ent = ent_out,
+	q_personas = q_personas_out,
+	q_hombres = q_hombres_out,
+	q_mujeres = q_mujeres_out,
+	menores_30 = menores_30_out,
+	pc = pc_out,
+	laptop = laptop_out,
+	tv_plana = tv_plana_out,
+	tablet = tablet_out,
+	smartphone = smartphone_out,
+	internet_f = internet_f_out,
+	max_nivel_esp = max_nivel_esp_out,
+	entr_diagnost = entr_diagnost_out,
+	abandono = abandono,
+	abandono_label = abandono_label
+	),
+	skipDuplicateMapInputs: true,
+	skipDuplicateMapOutputs: true) ~> SelectFeatures
+SelectFeatures aggregate(groupBy(row_hash = sha2(256, columns())),
+	each(match(true()), $$ = first($$))) ~> DistinctRows
+DistinctRows select(mapColumn(
+		each(match(name != 'row_hash'))
+	),
+	skipDuplicateMapInputs: true,
+	skipDuplicateMapOutputs: true) ~> DropHash
+DropHash sink(allowSchemaDrift: true,
+	validateSchema: false,
+	partitionFileNames:['enape.csv'],
+	truncate: true,
+	umask: 0022,
+	skipDuplicateMapInputs: true,
+	skipDuplicateMapOutputs: true,
+	partitionBy('hash', 1)) ~> ProcessedCsv
+SplitRows@Rejected sink(allowSchemaDrift: true,
+	validateSchema: false,
+	partitionFileNames:['rejected.csv'],
+	truncate: true,
+	umask: 0022,
+	skipDuplicateMapInputs: true,
+	skipDuplicateMapOutputs: true,
+	partitionBy('hash', 1)) ~> RejectedCsv
